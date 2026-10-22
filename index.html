@@ -3,6 +3,12 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#081321">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Apuração 2026">
 <title>Apuração Presidencial 2026 — Dados oficiais TSE</title>
 <style>
 :root{color-scheme:dark;--bg:#081321;--panel:#122239;--line:#293f5b;--muted:#9db0c9;--text:#f3f7fd;--cyan:#45d5e8}
@@ -14,7 +20,8 @@
 <main>
 <div class="notice" id="notice"><b>Fonte oficial:</b> arquivos públicos do Tribunal Superior Eleitoral. Painel independente, sem vínculo com o TSE. Nenhum resultado fictício é exibido.</div>
 <div class="between"><div><h2>Totalização nacional</h2><div class="muted">Votação presidencial conforme os arquivos oficiais disponíveis.</div></div><div class="muted" id="updated">Aguardando dados</div></div>
-<div class="toolbar"><label>Turno<select id="turno"><option value="6257">1º turno · 04/10/2026</option><option value="6258">2º turno · 25/10/2026</option></select></label><button id="refresh">↻ Atualizar agora</button><span class="muted">Atualização automática a cada 60 segundos.</span></div>
+<div class="toolbar"><label>Turno<select id="turno"><option value="6257">1º turno · 04/10/2026</option><option value="6258">2º turno · 25/10/2026</option></select></label><button id="refresh">↻ Atualizar agora</button>
+<button id="installApp" hidden>＋ Instalar aplicativo</button><span class="muted">Atualização automática a cada 60 segundos.</span></div>
 <div class="stats">
 <div class="stat"><div class="label">VOTOS NOMINAIS</div><div class="value" id="votes">—</div><div class="muted">Arquivo oficial TSE</div></div>
 <div class="stat"><div class="label">SEÇÕES TOTALIZADAS</div><div class="value" id="sections">—</div><div class="muted" id="sectionsPct">Aguardando</div></div>
@@ -49,4 +56,30 @@ function render(){const d=national;$('scope').textContent='Brasil · '+($('turno
 $('votes').textContent=fmt(d.nominais);$('sections').textContent=fmt(d.secoes)+' / '+fmt(d.totalSecoes);$('sectionsPct').textContent=pct(d.secoes,d.totalSecoes)+' das seções totalizadas';$('valid').textContent=fmt(d.validos);$('blank').textContent=fmt(d.brancos);$('nulls').textContent=fmt(d.nulos);const [a,b]=d.candidatos;$('leader').textContent=a?.nome||'—';$('difference').textContent=a&&b?fmt(a.votos-b.votos)+' votos de vantagem':'Sem comparação disponível';$('candidates').innerHTML=d.candidatos.map((c,i)=>'<div class="candidate"><div class="between"><div><b>'+esc(c.nome)+'</b><div class="muted">'+esc(c.partido)+' · nº '+esc(c.numero)+'</div></div><b>'+pct(c.votos,d.nominais)+'</b></div><div class="bar"><div class="fill" style="width:'+Math.min(100,d.nominais?100*c.votos/d.nominais:0)+'%;background:'+palette[i%palette.length]+'"></div></div><div class="smallrow"><span>'+fmt(c.votos)+' votos</span><span>Fonte TSE</span></div></div>').join('')||'<p class="muted">Sem votos publicados no arquivo.</p>';const count={};Object.values(states).forEach(s=>{const c=s.candidatos[0];if(c)count[c.nome]=(count[c.nome]||0)+1});$('stateLeads').textContent=Object.entries(count).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([n,v])=>n+': '+v).join(' · ')||'—';$('ranking').innerHTML=Object.values(states).filter(s=>s.candidatos[0]).sort((a,b)=>b.candidatos[0].votos-a.candidatos[0].votos).map(s=>'<tr><td>'+esc(UFS.find(x=>x[0]===s.uf)?.[1]||s.uf)+' ('+s.uf+')</td><td>'+esc(s.candidatos[0].nome)+'</td><td>'+fmt(s.candidatos[0].votos)+'</td><td>'+pct(s.candidatos[0].votos,s.nominais)+'</td></tr>').join('')||'<tr><td colspan="4">Aguardando resultados estaduais oficiais…</td></tr>'}
 async function update(){if(busy)return;busy=true;$('status').textContent='Consultando TSE…';const e=$('turno').value;try{const d=await fetchOne(e,'br');if(!d.candidatos.length)throw Error('O arquivo nacional ainda não contém votos publicados para este turno.');national=d;states={};const rs=await Promise.allSettled(UFS.map(x=>fetchOne(e,x[0])));rs.forEach((r,i)=>{if(r.status==='fulfilled')states[UFS[i][0]]=r.value});$('status').textContent='Dados oficiais recebidos';$('notice').classList.remove('error');$('notice').innerHTML='<b>Dados oficiais recebidos do TSE.</b> Arquivo nacional gerado em '+esc(d.gerado||'horário não informado')+'.';$('updated').textContent='Arquivo TSE: '+(d.gerado||'sem horário')+' · consulta '+new Date().toLocaleTimeString('pt-BR');$('footer').textContent='Última consulta: '+new Date().toLocaleString('pt-BR')+' · Projeto independente';render();paint();if(selected)selectState(selected)}catch(err){$('status').textContent='TSE indisponível';$('notice').classList.add('error');$('notice').innerHTML='<b>Não foi possível obter resultados oficiais.</b> '+esc(err.message)+'. Não serão exibidos números simulados. Consulte o <a href="https://resultados.tse.jus.br/" target="_blank" rel="noopener">portal oficial do TSE</a>.';if(!national)render()}finally{busy=false}}
 $('refresh').addEventListener('click',update);$('turno').addEventListener('change',()=>{national=null;states={};selected=null;render();paint();update()});render();loadMap();update();setInterval(update,60000);
+// Instalação PWA: aparece apenas em navegadores compatíveis.
+let installPromptEvent = null;
+const installButton = $('installApp');
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  installPromptEvent = event;
+  installButton.hidden = false;
+  installButton.textContent = '＋ Instalar aplicativo';
+});
+installButton.addEventListener('click', async () => {
+  if (!installPromptEvent) {
+    alert('Para instalar: abra o menu do navegador e escolha "Instalar app" ou "Adicionar à tela inicial".');
+    return;
+  }
+  installPromptEvent.prompt();
+  await installPromptEvent.userChoice;
+  installPromptEvent = null;
+  installButton.hidden = true;
+});
+window.addEventListener('appinstalled', () => {
+  installButton.hidden = true;
+  installButton.textContent = 'Aplicativo instalado';
+});
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(err => console.warn('Service worker não registrado:', err)));
+}
 </script></body></html>
